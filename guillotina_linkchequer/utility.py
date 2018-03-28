@@ -13,6 +13,8 @@ logger = logging.getLogger("linkchequer")
 
 IS_WORKER = os.getenv("IS_WORKER", None)
 
+scheduled = dict()
+
 
 @configure.utility(provides=ILinkChecker)
 class LinkCheckerUtility:
@@ -20,7 +22,6 @@ class LinkCheckerUtility:
     def __init__(self, settings=None, loop=None):
         self._loop = loop
         self._settings = settings
-        self._scheduled = dict()
 
     async def initialize(self, app=None):
 
@@ -36,29 +37,27 @@ class LinkCheckerUtility:
             self._loop = asyncio.get_event_loop()
 
         async for item in links.async_values():
-            tc = await item.next_tick()
-            logger.debug(f'scheduling {item.url} at {tc}')
-            # todo lock this instance as the only worker
-            hand = self._loop.call_later(
-                tc, lambda: asyncio.ensure_future(check_item(item))
-            )
-            self._scheduled[item.id] = hand
+            await self.add(item)
 
+        logger.debug(f'scheduled {scheduled.keys()}')
         await tm.abort(txn=txn)
+
 
     async def add(self, item):
 
-        if item.id in self._scheduled:
-            self._scheduled[item.id].cancel()
+        logger.debug(f'scheduled {scheduled.keys()}')
+        if item.id in scheduled:
+            scheduled[item.id].cancel()
 
         nt = await item.next_tick()
         logger.debug(f'scheduling {item.url} when {nt}')
         hand = self._loop.call_later(
-            nt, lambda: asyncio.ensure_future(check_item(item))
+            nt, lambda x: asyncio.ensure_future(check_item(item)),
+            *[item.id]
         )
-        self._scheduled[item.id] = hand
+        scheduled[item.id] = hand
 
     async def remove(self, item):
-        if item.id in self._scheduled:
-            self._scheduled[item.id].cancel()
-            del self._scheduled[item.id]
+        if item.id in scheduled:
+            scheduled[item.id].cancel()
+            del scheduled[item.id]
