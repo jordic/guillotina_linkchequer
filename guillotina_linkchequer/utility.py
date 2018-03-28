@@ -39,22 +39,17 @@ class LinkCheckerUtility:
         async for item in links.async_values():
             await self.add(item)
 
-        logger.debug(f'scheduled {scheduled.keys()}')
         await tm.abort(txn=txn)
 
-
     async def add(self, item):
-
-        logger.debug(f'scheduled {scheduled.keys()}')
         if item.id in scheduled:
             scheduled[item.id].cancel()
 
         nt = await item.next_tick()
-        logger.debug(f'scheduling {item.url} when {nt}')
         hand = self._loop.call_later(
-            nt, lambda x: asyncio.ensure_future(check_item(item)),
-            *[item.id]
+            nt, lambda: asyncio.ensure_future(check_item(item))
         )
+        logger.info(f'scheduled {item.id} after {nt} seconds')
         scheduled[item.id] = hand
 
     async def remove(self, item):
